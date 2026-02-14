@@ -25,8 +25,7 @@ This skill helps you maintain a single "master" markdown file with your complete
 impact-resume/
 ├── SKILL.md                              # Agent instructions (the skill itself)
 ├── README.md                             # This file
-├── assets/
-│   └── resume-source-template.md         # Template for building your source file
+├── resume-source-template.md         # Template for building your source file
 └── references/
     └── docx-generation.md                # Technical reference for .docx generation
 ```
