@@ -1,17 +1,21 @@
 ---
-name: impact-resume
+name: resume
 description: >
   Generate impact-driven, executive-level resumes from a structured markdown source file.
   Use this skill whenever the user wants to: create a tailored resume for a specific job posting,
   build a reusable resume source file from prior experience, generate a .docx resume with
   professional formatting, or rewrite resume bullets to lead with business outcomes.
-  Trigger on mentions of "resume", "CV", "job application", "cover letter" (as resume context),
-  "tailor my experience", or any request to match experience against a job description.
+  Trigger on mentions of "resume", "CV", "job application", "tailor my experience",
+  or any request to match experience against a job description.
+argument-hint: [job posting URL or description]
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash, WebFetch, WebSearch, AskUserQuestion, Task
 ---
 
 # Impact Resume
 
 Generate polished, single-page executive resumes from a structured markdown source file. The source file captures a person's complete career history, and this skill transforms the relevant pieces into an impact-first narrative tailored to a specific job posting.
+
+User's request: $ARGUMENTS
 
 ## Philosophy
 
@@ -47,11 +51,22 @@ Before writing anything, map the user's experience to the job requirements:
 - What skills from the posting does the user demonstrably have?
 - Where are the gaps, and can adjacent experience fill them credibly?
 
-Share this analysis with the user briefly. It helps calibrate expectations and surfaces any title or framing decisions (e.g., "Should we use 'Program Manager' or 'Product Manager' for the Workday role? The posting emphasizes product ownership.").
+Share this analysis with the user briefly. It helps calibrate expectations and surfaces any title or framing decisions.
 
-### Step 3: Select and Structure Content
+### Step 3: Pre-Draft Questions
 
-Based on the analysis, decide:
+Use `AskUserQuestion` to ask the user targeted questions based on the gap analysis from Step 2. Focus on primary considerations only:
+
+- **Experience gaps** the JD requires that the CV doesn't clearly demonstrate (e.g., "Do you have variable compensation experience?")
+- **Title/framing decisions** where multiple options exist (e.g., "Should we use 'Client Director' or 'Practice Group Leader' for Evalueserve?")
+- **Overlapping dates or ambiguities** that need clarification (e.g., "Was Piedmont part-time alongside Workday?")
+- **Critical context** that would change bullet strategy
+
+No fixed cap on questions — ask as many as needed but only for primary gaps, not secondary concerns. Use multiple `AskUserQuestion` calls if the questions span different topics.
+
+### Step 4: Select, Structure, and Write
+
+Incorporate the user's answers from Step 3 into all decisions below.
 
 **Title selection:** The source file may list multiple relevant titles per role. Pick the one that best mirrors the target posting's language.
 
@@ -72,9 +87,7 @@ Based on the analysis, decide:
 - Education
 - Core Competencies (grouped by category)
 
-### Step 4: Write Impact-First Bullets
-
-For each bullet, follow this pattern:
+**Writing impact-first bullets:** For each bullet, follow this pattern:
 
 > [Business outcome / "so what"] + [by/through] + [what you actually did] + [with what scale/evidence]
 
@@ -87,9 +100,7 @@ Concrete techniques:
 
 The user's source file provides raw material — wins, metrics, context, client names. Your job is to synthesize these into concise, outcome-led statements. Don't just rearrange their words; write original sentences that tell a coherent career story.
 
-### Step 5: Write the Professional Summary
-
-The summary should be 3-4 sentences that:
+**Writing the Professional Summary:** The summary should be 3-4 sentences that:
 1. Open with a positioning statement: "[Level] [function] who [core value proposition]"
 2. Provide 1-2 proof points with specific numbers from the career
 3. Close with credentials and breadth of capability
@@ -97,9 +108,7 @@ The summary should be 3-4 sentences that:
 Example structure:
 > Enterprise strategy leader who translates market intelligence into growth. Built and led teams that reshaped how organizations make strategic decisions — from redefining a $250M business unit's addressable market to architecting analytics platforms for 3,500+ stakeholders. Georgia Tech Executive MBA with a decade of competitive analysis, financial modeling, and cross-functional execution delivering measurable P&L impact.
 
-### Step 6: Generate the .docx
-
-Read `references/docx-generation.md` for the technical approach to generating the resume as a Word document using the `docx` npm library. The reference includes the complete code pattern with professional formatting (navy/blue color scheme, Calibri font, proper spacing).
+**Generating the .docx:** Read `references/docx-generation.md` for the technical approach to generating the resume as a Word document using the `docx` npm library. The reference includes the complete code pattern with professional formatting (navy/blue color scheme, Calibri font, proper spacing).
 
 Key formatting rules:
 - **Target: 1 page** for senior manager level; up to 1.5 pages for VP+ with extensive experience
@@ -109,15 +118,28 @@ Key formatting rules:
 - **Section order:** Name/Contact → Professional Summary → Professional Experience → Education → Core Competencies
 - **ATS-friendly:** no columns, no text boxes, no images, standard section headers
 
-After generating, convert to PDF if possible (via LibreOffice) to verify page count.
+Write a Node.js script, run it with `node`, and save the .docx output to the current working directory.
 
-### Step 7: Review and Iterate
+After generating, attempt to convert to PDF (via LibreOffice CLI if available) to verify page count.
 
-Present the resume to the user and invite feedback. Common iteration patterns:
-- "Too long" → reduce bullets on older roles, consolidate, tighten wording
-- "Too generic" → go back to source file for more specific metrics and context
-- "Doesn't sound like me" → adjust tone, keep their terminology where it's strong
-- "Missing [specific experience]" → check if source file has relevant material under a different role
+### Step 5: Review Agent
+
+Launch a `Task` agent with `subagent_type: general-purpose` to review the draft resume against the full job description. Pass the agent the complete resume content and the full JD text. The agent should evaluate:
+
+1. **Keyword alignment** — missing terms or phrases from the JD that should appear in the resume
+2. **Narrative coherence** — does the career story work for this role? Are transitions logical?
+3. **Company culture fit** — does the resume signal the right values? (The agent should web-search for well-known features of the target company — leadership principles, culture, interview style — to inform this assessment.)
+4. **Specific bullet improvements** — concrete rewrites with rationale
+5. **Gaps and risks** — what a hiring manager would question or flag
+6. **Overall grade** (A/B/C) with justification
+
+### Step 6: Present Analysis & Post-Review Questions
+
+Present the reviewer's key findings to the user in a clear summary. Then use `AskUserQuestion` to ask about any gaps the user might be able to bridge with additional context or experience not in the source file. **Always do this round**, even if the review is positive — frame it as "anything else you'd like to add or adjust?"
+
+### Step 7: Finalize
+
+Incorporate user feedback from Step 6. Make targeted edits to the resume content, then regenerate the .docx (following the same generation process from Step 4). Present the final version to the user.
 
 ## Building a Source File from Scratch
 
