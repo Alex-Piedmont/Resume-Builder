@@ -1,6 +1,15 @@
 # Generating .docx Resumes with Node.js
 
-This reference covers the technical approach for generating professional resume documents using the `docx` npm library.
+This reference covers the technical approach for generating ATS-friendly resume documents using the `docx` npm library.
+
+## ATS Compatibility Principles
+
+Applicant Tracking Systems parse .docx files by reading the underlying XML. To ensure reliable parsing:
+
+1. **Use Word heading styles** — ATS systems identify sections (Experience, Education) by looking for `Heading1`, `Heading2`, etc. in the document styles. Plain bold/colored text is invisible to them.
+2. **Never use tables for layout** — Tables confuse ATS parsers. Use tab stops for multi-column alignment (title + date on same line).
+3. **No text boxes, columns, or images** — Stick to a single-column flow of paragraphs.
+4. **Use standard section names** — "Professional Experience", "Education", "Core Competencies" are universally recognized.
 
 ## Setup
 
@@ -11,17 +20,18 @@ npm install docx
 ## Architecture
 
 The resume generator is a single Node.js script that:
-1. Defines formatting constants (fonts, colors, sizes, margins)
-2. Provides helper functions for repeated patterns (section headers, experience entries, bullets)
-3. Builds a `Document` object with all content
-4. Writes the buffer to a .docx file
+1. Defines document-level styles (headings, body, bullets)
+2. Defines formatting constants (fonts, colors, sizes, margins)
+3. Provides helper functions for repeated patterns (section headers, experience entries, bullets)
+4. Builds a `Document` object with all content
+5. Writes the buffer to a .docx file
 
 ## Formatting Constants
 
 ```javascript
-const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+const { Document, Packer, Paragraph, TextRun, TabStopPosition, TabStopType,
         AlignmentType, LevelFormat, ExternalHyperlink,
-        BorderStyle, WidthType } = require('docx');
+        BorderStyle, HeadingLevel, convertInchesToTwip } = require('docx');
 const fs = require('fs');
 
 // Typography
@@ -44,10 +54,6 @@ const PH = 15840;        // 11" page height
 const ML = 720, MR = 720;  // 0.5" left/right margins
 const MT = 460, MB = 400;  // ~0.32" / ~0.28" top/bottom margins
 const CW = PW - ML - MR;   // Content width
-
-// Invisible table borders (for layout tables)
-const NB = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
-const NBS = { top: NB, bottom: NB, left: NB, right: NB };
 ```
 
 ### Notes on Units
@@ -56,60 +62,104 @@ const NBS = { top: NB, bottom: NB, left: NB, right: NB };
 - **Spacing** values (before/after on paragraphs) are in **twips**. 1pt = 20 twips.
 - **Page dimensions and margins** are also in twips.
 
+## Document Styles
+
+Define heading styles so ATS systems can identify resume structure. These styles live in the `Document` constructor:
+
+```javascript
+const doc = new Document({
+    styles: {
+        paragraphStyles: [
+            {
+                id: "Heading2",
+                name: "Heading 2",
+                basedOn: "Normal",
+                next: "Normal",
+                run: {
+                    font: FONT,
+                    size: SZ_SECTION,
+                    bold: true,
+                    color: C1,
+                    characterSpacing: 50,
+                    allCaps: true,
+                },
+                paragraph: {
+                    spacing: { before: 80, after: 15 },
+                    border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: C2 } },
+                },
+            },
+            {
+                id: "Heading3",
+                name: "Heading 3",
+                basedOn: "Normal",
+                next: "Normal",
+                run: {
+                    font: FONT,
+                    size: SZ_BODY,
+                    bold: true,
+                    color: C1,
+                },
+                paragraph: {
+                    spacing: { before: 0, after: 0 },
+                },
+            },
+        ],
+    },
+    // ... numbering, sections (see below)
+});
+```
+
+**Why this matters:** When an ATS encounters `<w:pStyle w:val="Heading2"/>` in the XML, it knows that paragraph is a section title. Without a heading style, section headers are just bold-colored text — visually identical to a human reader, but invisible to automated parsing.
+
 ## Helper Functions
 
 ### Section Header
 
-Creates an uppercase, letter-spaced heading with a blue underline rule:
+Creates a Heading 2 paragraph. ATS systems will recognize this as a section delimiter:
 
 ```javascript
 function sh(text) {
     return new Paragraph({
-        spacing: { before: 80, after: 15 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: C2 } },
-        children: [new TextRun({
-            text: text.toUpperCase(),
-            font: FONT, size: SZ_SECTION, bold: true, color: C1,
-            characterSpacing: 50
-        })]
+        heading: HeadingLevel.HEADING_2,
+        children: [new TextRun({ text: text })]
     });
 }
 ```
+
+The style definition on Heading2 handles the uppercase, letter-spacing, color, and bottom border. The `sh()` function just needs to set the heading level and provide the text.
 
 ### Experience Entry Header
 
-A two-row, two-column table with no visible borders. Row 1: title (left) + dates (right). Row 2: company + location (left).
+Uses tab stops instead of tables. A right-aligned tab stop pushes the date to the right margin. Two paragraphs: one for title + date, one for company + location.
 
 ```javascript
 function eh(title, company, location, dates) {
-    const cL = Math.round(CW * 0.72), cR = CW - cL;
-    return new Table({
-        width: { size: CW, type: WidthType.DXA },
-        columnWidths: [cL, cR],
-        rows: [
-            new TableRow({ children: [
-                new TableCell({ borders: NBS, width: { size: cL, type: WidthType.DXA },
-                    children: [new Paragraph({ spacing: { before: 0, after: 0 }, children: [
-                        new TextRun({ text: title, font: FONT, size: SZ_BODY, bold: true, color: C1 }),
-                    ]})] }),
-                new TableCell({ borders: NBS, width: { size: cR, type: WidthType.DXA },
-                    children: [new Paragraph({ alignment: AlignmentType.RIGHT, spacing: { before: 0, after: 0 }, children: [
-                        new TextRun({ text: dates, font: FONT, size: SZ_SMALL, color: CL }),
-                    ]})] }),
-            ]}),
-            new TableRow({ children: [
-                new TableCell({ borders: NBS, width: { size: cL, type: WidthType.DXA },
-                    children: [new Paragraph({ spacing: { before: 0, after: 10 }, children: [
-                        new TextRun({ text: company, font: FONT, size: SZ_BODY, italics: true, color: CB }),
-                        new TextRun({ text: location ? `  |  ${location}` : "", font: FONT, size: SZ_SMALL, color: CL }),
-                    ]})] }),
-                new TableCell({ borders: NBS, width: { size: cR, type: WidthType.DXA },
-                    children: [new Paragraph({ spacing: { before: 0, after: 0 }, children: [] })] }),
-            ]}),
-        ]
-    });
+    return [
+        // Row 1: Title (left) + Dates (right-aligned via tab stop)
+        new Paragraph({
+            heading: HeadingLevel.HEADING_3,
+            tabStops: [{ type: TabStopType.RIGHT, position: CW }],
+            children: [
+                new TextRun({ text: title }),
+                new TextRun({ text: "\t" }),
+                new TextRun({ text: dates, font: FONT, size: SZ_SMALL, color: CL, bold: false }),
+            ]
+        }),
+        // Row 2: Company + Location
+        new Paragraph({
+            spacing: { before: 0, after: 10 },
+            children: [
+                new TextRun({ text: company, font: FONT, size: SZ_BODY, italics: true, color: CB }),
+                new TextRun({ text: location ? `  |  ${location}` : "", font: FONT, size: SZ_SMALL, color: CL }),
+            ]
+        }),
+    ];
 }
 ```
+
+**Important:** `eh()` returns an **array** of two paragraphs. Use the spread operator (`...eh(...)`) when adding to the section's `children` array.
+
+**Why Heading 3 for job titles:** ATS systems use heading hierarchy to associate bullets with roles. A bullet following a Heading 3 is understood to belong to that role. Without the heading style, the ATS may lump all bullets together or fail to identify individual positions.
 
 ### Bullet Point
 
@@ -127,6 +177,9 @@ function b(text) {
 
 ```javascript
 const doc = new Document({
+    styles: {
+        // ... (styles block from above)
+    },
     numbering: { config: [{
         reference: "bul",
         levels: [{
@@ -190,19 +243,17 @@ const doc = new Document({
 
             // PROFESSIONAL EXPERIENCE
             sh("Professional Experience"),
-            eh("Job Title", "Company Name", "City, ST", "2023 \u2013 Present"),
+            ...eh("Job Title", "Company Name", "City, ST", "2023 \u2013 Present"),
             b("Impact-first bullet point here..."),
             b("Another bullet point..."),
 
             // EDUCATION
             sh("Education"),
-            // Use tables for degree | school | year alignment
-            // (see full pattern below)
+            // (see Education section below)
 
             // CORE COMPETENCIES
             sh("Core Competencies"),
-            // Category: Skill | Skill | Skill format
-            // Use SZ_SMALL for competency text to save vertical space
+            // (see Core Competencies section below)
         ]
     }]
 });
@@ -215,32 +266,28 @@ Packer.toBuffer(doc).then(buf => {
 });
 ```
 
-## Education Rows
+## Education Entries
 
-Each education entry is a single-row, two-column table:
+Each education entry uses tab stops for alignment — no tables:
 
 ```javascript
-["MBA, Finance|University of Texas|2024",
- "B.S., Computer Science|Stanford University|2018"].map(row => {
-    const [deg, sch, yr] = row.split("|");
-    const cL = Math.round(CW * 0.72), cR = CW - cL;
-    return new Table({
-        width: { size: CW, type: WidthType.DXA },
-        columnWidths: [cL, cR],
-        rows: [new TableRow({ children: [
-            new TableCell({ borders: NBS, width: { size: cL, type: WidthType.DXA },
-                children: [new Paragraph({ spacing: { before: 5, after: 5 }, children: [
-                    new TextRun({ text: deg, font: FONT, size: SZ_BODY, bold: true, color: C1 }),
-                    new TextRun({ text: "  \u2013  ", font: FONT, size: SZ_BODY, color: CB }),
-                    new TextRun({ text: sch, font: FONT, size: SZ_BODY, italics: true, color: CB }),
-                ]})] }),
-            new TableCell({ borders: NBS, width: { size: cR, type: WidthType.DXA },
-                children: [new Paragraph({ alignment: AlignmentType.RIGHT, spacing: { before: 5, after: 5 }, children: [
-                    new TextRun({ text: yr, font: FONT, size: SZ_SMALL, color: CL }),
-                ]})] }),
-        ]})]
+function eduEntry(degree, school, year) {
+    return new Paragraph({
+        tabStops: [{ type: TabStopType.RIGHT, position: CW }],
+        spacing: { before: 5, after: 5 },
+        children: [
+            new TextRun({ text: degree, font: FONT, size: SZ_BODY, bold: true, color: C1 }),
+            new TextRun({ text: "  \u2013  ", font: FONT, size: SZ_BODY, color: CB }),
+            new TextRun({ text: school, font: FONT, size: SZ_BODY, italics: true, color: CB }),
+            new TextRun({ text: "\t" }),
+            new TextRun({ text: year, font: FONT, size: SZ_SMALL, color: CL }),
+        ]
     });
-})
+}
+
+// Usage:
+eduEntry("MBA, Finance", "University of Texas", "2024"),
+eduEntry("B.S., Computer Science", "Stanford University", "2018"),
 ```
 
 ## Core Competencies

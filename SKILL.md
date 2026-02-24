@@ -116,7 +116,7 @@ Key formatting rules:
 - **Font:** Calibri, body text 9.5pt, name 13pt, section headers 10pt
 - **Color scheme:** Navy (#1F3864) for headers, medium blue (#2E75B6) for accents, dark gray (#333333) for body
 - **Section order:** Name/Contact → Professional Summary → Professional Experience → Education → Core Competencies
-- **ATS-friendly:** no columns, no text boxes, no images, standard section headers
+- **ATS-friendly:** no tables, no columns, no text boxes, no images. Use Word heading styles (Heading 2 for sections, Heading 3 for job titles) so ATS parsers can identify document structure. Use tab stops for title/date alignment instead of tables.
 
 Write a Node.js script, run it with `node`, and save the .docx output to the current working directory.
 
